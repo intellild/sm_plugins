@@ -22,7 +22,7 @@ public Plugin:myinfo = {
     name = "CloudMusic",
     author = "まきちゃん~",
     description = "NetEase CloudMusic",
-    version = "1.0",
+    version = "1.1",
     url = "moeub.com"
 };
 
@@ -36,11 +36,16 @@ public OnPluginStart()
 	KvSetNum(hStop, "type", MOTDPANEL_TYPE_URL);
 	KvSetString(hStop, "msg", "about:blank");
 
+	hMOTD = null;
 	ready = true;
 }
 
 public OnPluginEnd()
 {
+	if(hMOTD != null)
+	{
+		CloseHandle(hMOTD);
+	}
 	CloseHandle(hStop);
 }
 
@@ -51,21 +56,21 @@ public Action CloudMusic_Command(int client, int args)
 		PrintToChat(client, "usage: !music <music name>");
 		return Plugin_Handled;
 	}
+	if(hMOTD != null)
+	{
+		PrintToChat(client, "wait");
+		return Plugin_Handled;
+	}
+
 	char name[128];
 	GetCmdArgString(name, sizeof(name));
+	PrintToChat(client, "searching: %s", name);
 	CloudMusic_SearchAsync(client, name);
 	return Plugin_Handled;
 }
 
 void CloudMusic_SearchAsync(int client, const char[] name, offset = 0)
 {
-	if(!ready)
-	{
-		return;
-	}
-
-	ready = false;
-
 	Handle curl = curl_easy_init();
 	if(curl == INVALID_HANDLE)
 	{
@@ -205,6 +210,7 @@ public int CloudMusic_VoteHandler(Menu menu, MenuAction action, int param1, int 
 	else if(action == MenuAction_End)
 	{
 		CloseHandle(hMOTD);
+		hMOTD = null;
 		CloseHandle(menu);
 		ready = true;
 	}
