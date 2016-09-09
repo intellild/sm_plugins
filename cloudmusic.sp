@@ -8,20 +8,40 @@
 String:url[] = "http://music.163.com/api/search/get/web";
 String:referer[] = "http://music.163.com/";
 String:cookie[] = "appver=1.5.0.75771;";
-
-#define SONG_NAME 0
-#define SONG_AUTHOR 1
+String:playaddr[] = "http://music.163.com/outchain/player?type=2&id=%d&auto=1&height=66";
 
 char jsonBuf[BUFLEN];
 bool ready;
 char song[15][32];
-int id[8];
+int id[15];
 int song_len;
+Handle hMOTD;
+Handle hStop;
+
+public Plugin:myinfo = {
+    name = "CloudMusic",
+    author = "まきちゃん~",
+    description = "NetEase CloudMusic",
+    version = "1.0",
+    url = "moeub.com"
+};
 
 public OnPluginStart()
 {
 	RegConsoleCmd("sm_music", CloudMusic_Command);
+	RegConsoleCmd("sm_musicstop", CloudMusic_Stop);
+
+	hStop = CreateKeyValues("data");
+	KvSetString(hStop, "title", "music");
+	KvSetNum(hStop, "type", MOTDPANEL_TYPE_URL);
+	KvSetString(hStop, "msg", "about:blank");
+
 	ready = true;
+}
+
+public OnPluginEnd()
+{
+	CloseHandle(hStop);
 }
 
 public Action CloudMusic_Command(int client, int args)
@@ -117,6 +137,7 @@ void CloudMusic_ProcessJSON(Handle obj)
 			return;
 		}
 		json_object_get_string(song_obj, "name", song[i], 32);
+		id[i] = json_object_get_int(song_obj, "id");
 	}
 }
 
@@ -132,9 +153,7 @@ CloudMusic_Menu(int client)
 	menu.SetTitle("网易云音乐 by まきちゃん~");
 	for(int i = 0; i < song_len; i++)
 	{
-		char buf[64];
-		Format(buf, sizeof(buf), "%s", song[i]);
-		menu.AddItem("", buf);
+		menu.AddItem("", song[i]);
 	}
 	menu.Display(client, MENU_TIME);
 }
@@ -143,8 +162,19 @@ public int CloudMusic_MenuHandler(Menu menu, MenuAction action, int param1, int 
 {
 	if(action == MenuAction_Select)
 	{
-		CloseHandle(menu);
+		char playurl[128];
+		Format(playurl, sizeof(playurl), playaddr, id[param2]);
+
+		hMOTD = CreateKeyValues("data");
+		KvSetString(hMOTD, "title", "music");
+		KvSetNum(hMOTD, "type", MOTDPANEL_TYPE_URL);
+		KvSetString(hMOTD, "msg", playurl);
+
 		CloudMusic_Vote(param1, param2);
+	}
+	else if(action == MenuAction_End)
+	{
+		CloseHandle(menu);
 	}
 }
 
@@ -159,34 +189,30 @@ CloudMusic_Vote(int client, int songid)
 	menu.SetTitle("%N 推荐了音乐 %s", client, song[songid]);
 	menu.AddItem("", "yes");
 	menu.AddItem("", "no");
-	menu.VoteResultCallback = CloudMusic_VoteResult;
+
 	menu.DisplayVoteToAll(MENU_TIME);
 }
 
 public int CloudMusic_VoteHandler(Menu menu, MenuAction action, int param1, int param2)
 {
-	if(action == MenuAction_VoteEnd)
+	if(action == MenuAction_Select)
 	{
+		if(param2 == 0)
+		{
+			ShowVGUIPanel(param1, "info", hMOTD, false);
+		}
+	}
+	else if(action == MenuAction_End)
+	{
+		CloseHandle(hMOTD);
 		CloseHandle(menu);
 		ready = true;
 	}
 }
 
-public void CloudMusic_VoteResult(Menu menu,
-			int num_votes,
-			int num_clients,
-			const int[][] client_info,
-			int num_items,
-			const int[][] item_info)
+public Action CloudMusic_Stop(int client, int args)
 {
-	if(item_info[0][VOTEINFO_ITEM_VOTES] > num_votes / 2)
-	{
-		PrintToChatAll("accepted");
-	}
-	else
-	{
-		PrintToChatAll("denied");
-	}
+	ShowVGUIPanel(client, "info", hStop, false);
 }
 
 public CloudMusic_Error(Handle handle, CURLcode code, int client, const char[] msg)
