@@ -3,7 +3,7 @@
 #include <smjansson>
 
 #define BUFLEN 20000
-#define MENU_TIME 30
+#define MENU_TIME 5
 
 String:url[] = "http://music.163.com/api/search/get/web";
 String:referer[] = "http://music.163.com/";
@@ -15,14 +15,17 @@ bool ready;
 char song[15][32];
 int id[15];
 int song_len;
-Handle hMOTD;
+Handle hPlayer;
 Handle hStop;
+bool allow = true;
+bool client_select[MAXPLAYERS + 1] = {false, ...};
+char playurl[128];
 
 public Plugin:myinfo = {
     name = "CloudMusic",
     author = "まきちゃん~",
     description = "NetEase CloudMusic",
-    version = "1.1",
+    version = "1.2",
     url = "moeub.com"
 };
 
@@ -30,22 +33,12 @@ public OnPluginStart()
 {
 	RegConsoleCmd("sm_music", CloudMusic_Command);
 	RegConsoleCmd("sm_musicstop", CloudMusic_Stop);
-
-	hStop = CreateKeyValues("data");
-	KvSetString(hStop, "title", "music");
-	KvSetNum(hStop, "type", MOTDPANEL_TYPE_URL);
-	KvSetString(hStop, "msg", "about:blank");
-
-	hMOTD = null;
-	ready = true;
+	CloudMusic_StopInit();
+	allow = true;
 }
 
 public OnPluginEnd()
 {
-	if(hMOTD != null)
-	{
-		CloseHandle(hMOTD);
-	}
 	CloseHandle(hStop);
 }
 
@@ -56,15 +49,14 @@ public Action CloudMusic_Command(int client, int args)
 		PrintToChat(client, "usage: !music <music name>");
 		return Plugin_Handled;
 	}
-	if(hMOTD != null)
+	if(!allow)
 	{
 		PrintToChat(client, "wait");
 		return Plugin_Handled;
 	}
-
+	allow = false;
 	char name[128];
 	GetCmdArgString(name, sizeof(name));
-	PrintToChat(client, "searching: %s", name);
 	CloudMusic_SearchAsync(client, name);
 	return Plugin_Handled;
 }
@@ -72,7 +64,7 @@ public Action CloudMusic_Command(int client, int args)
 void CloudMusic_SearchAsync(int client, const char[] name, offset = 0)
 {
 	Handle curl = curl_easy_init();
-	if(curl == INVALID_HANDLE)
+	if(curl == null)
 	{
 		return;
 	}
@@ -165,21 +157,22 @@ CloudMusic_Menu(int client)
 
 public int CloudMusic_MenuHandler(Menu menu, MenuAction action, int param1, int param2)
 {
-	if(action == MenuAction_Select)
+	switch(action)
 	{
-		char playurl[128];
-		Format(playurl, sizeof(playurl), playaddr, id[param2]);
-
-		hMOTD = CreateKeyValues("data");
-		KvSetString(hMOTD, "title", "music");
-		KvSetNum(hMOTD, "type", MOTDPANEL_TYPE_URL);
-		KvSetString(hMOTD, "msg", playurl);
-
-		CloudMusic_Vote(param1, param2);
-	}
-	else if(action == MenuAction_End)
-	{
-		CloseHandle(menu);
+		case MenuAction_Select:
+		{
+			Format(playurl, sizeof(playurl), playaddr, id[param2]);
+			CloudMusic_PlaterInit();
+			CloudMusic_Vote(param1, param2);
+		}
+		case MenuAction_End:
+		{
+			CloseHandle(menu);
+		}
+		case MenuAction_Cancel:
+		{
+			allow = true;
+		}
 	}
 }
 
@@ -204,16 +197,36 @@ public int CloudMusic_VoteHandler(Menu menu, MenuAction action, int param1, int 
 	{
 		if(param2 == 0)
 		{
-			ShowVGUIPanel(param1, "info", hMOTD, false);
+			CloudMusic_Play(param1);
 		}
 	}
 	else if(action == MenuAction_End)
 	{
-		CloseHandle(hMOTD);
-		hMOTD = null;
+		CloseHandle(hPlayer);
 		CloseHandle(menu);
-		ready = true;
+		allow = true;
 	}
+}
+
+void CloudMusic_PlaterInit()
+{
+	hPlayer = CreateKeyValues("data");
+	KvSetString(hPlayer, "title", "music");
+	KvSetNum(hPlayer, "type", MOTDPANEL_TYPE_URL);
+	KvSetString(hPlayer, "msg", playurl);
+}
+
+public Action CloudMusic_Play(int client)
+{
+	ShowVGUIPanel(client, "info", hPlayer, false);
+}
+
+CloudMusic_StopInit()
+{
+	hStop = CreateKeyValues("data");
+	KvSetString(hStop, "title", "music");
+	KvSetNum(hStop, "type", MOTDPANEL_TYPE_URL);
+	KvSetString(hStop, "msg", "about:blank");
 }
 
 public Action CloudMusic_Stop(int client, int args)
