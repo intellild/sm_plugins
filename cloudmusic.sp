@@ -5,6 +5,19 @@
 #define BUFLEN 20000
 #define MENU_TIME 5
 
+#define CHECK \
+if(args < 2)\
+{\
+	PrintToChat(client, "usage: !music search|url|stop <music name|url>");\
+	return Plugin_Handled;\
+}\
+if(!allow)\
+{\
+	PrintToChat(client, "wait");\
+	return Plugin_Handled;\
+}\
+allow = false
+
 String:url[] = "http://music.163.com/api/search/get/web";
 String:referer[] = "http://music.163.com/";
 String:cookie[] = "appver=1.5.0.75771;";
@@ -19,7 +32,7 @@ Handle hPlayer;
 Handle hStop;
 bool allow = true;
 bool client_select[MAXPLAYERS + 1] = {false, ...};
-char playurl[128];
+char playurl[512];
 
 public Plugin:myinfo = {
     name = "CloudMusic",
@@ -32,7 +45,6 @@ public Plugin:myinfo = {
 public OnPluginStart()
 {
 	RegConsoleCmd("sm_music", CloudMusic_Command);
-	RegConsoleCmd("sm_musicstop", CloudMusic_Stop);
 	CloudMusic_StopInit();
 	allow = true;
 }
@@ -44,20 +56,31 @@ public OnPluginEnd()
 
 public Action CloudMusic_Command(int client, int args)
 {
-	if(args != 1)
+	if(args == 0)
 	{
-		PrintToChat(client, "usage: !music <music name>");
+		PrintToChat(client, "usage: !music search|url|stop <music name|url>");
 		return Plugin_Handled;
 	}
-	if(!allow)
+	char arg1[8];
+	GetCmdArg(1, arg1, sizeof(arg1));
+	if(StrEqual(arg1, "search"))
 	{
-		PrintToChat(client, "wait");
-		return Plugin_Handled;
+		CHECK;
+		char name[64];
+		GetCmdArgString(name, sizeof(name));
+		CloudMusic_SearchAsync(client, name);
 	}
-	allow = false;
-	char name[128];
-	GetCmdArgString(name, sizeof(name));
-	CloudMusic_SearchAsync(client, name);
+	else if(StrEqual(arg1, "stop"))
+	{
+		CloudMusic_Stop(client);
+	}
+	else
+	{
+		GetCmdArgString(playurl, sizeof(playurl));
+		CloudMusic_PlayerInit();
+		CloudMusic_Vote(client, "");
+	}
+
 	return Plugin_Handled;
 }
 
@@ -70,7 +93,7 @@ void CloudMusic_SearchAsync(int client, const char[] name, offset = 0)
 	}
 
 	char buf[256];
-	Format(buf, sizeof(buf), "s=%s&offset=%d&type=1&limit=15", name, offset);
+	Format(buf, sizeof(buf), "s=%s&offset=%d&type=1&limit=20", name, offset);
 	jsonBuf[0] = 0;
 	curl_easy_setopt_string(curl, CURLOPT_URL, url);
    	curl_easy_setopt_string(curl, CURLOPT_COOKIE,cookie);
@@ -162,8 +185,8 @@ public int CloudMusic_MenuHandler(Menu menu, MenuAction action, int param1, int 
 		case MenuAction_Select:
 		{
 			Format(playurl, sizeof(playurl), playaddr, id[param2]);
-			CloudMusic_PlaterInit();
-			CloudMusic_Vote(param1, param2);
+			CloudMusic_PlayerInit();
+			CloudMusic_Vote(param1, song[param2]);
 		}
 		case MenuAction_End:
 		{
@@ -176,7 +199,7 @@ public int CloudMusic_MenuHandler(Menu menu, MenuAction action, int param1, int 
 	}
 }
 
-CloudMusic_Vote(int client, int songid)
+CloudMusic_Vote(int client, char[] songName)
 {
 	Menu menu = CreateMenu(CloudMusic_VoteHandler);
 	if(menu == null)
@@ -184,7 +207,7 @@ CloudMusic_Vote(int client, int songid)
 		CloudMusic_Error(null, 0, 0, "Vote Error");
 		return;
 	}
-	menu.SetTitle("%N 推荐了音乐 %s", client, song[songid]);
+	menu.SetTitle("%N 推荐了音乐 %s", client, songName);
 	menu.AddItem("", "yes");
 	menu.AddItem("", "no");
 
@@ -208,7 +231,7 @@ public int CloudMusic_VoteHandler(Menu menu, MenuAction action, int param1, int 
 	}
 }
 
-void CloudMusic_PlaterInit()
+void CloudMusic_PlayerInit()
 {
 	hPlayer = CreateKeyValues("data");
 	KvSetString(hPlayer, "title", "music");
@@ -229,7 +252,7 @@ CloudMusic_StopInit()
 	KvSetString(hStop, "msg", "about:blank");
 }
 
-public Action CloudMusic_Stop(int client, int args)
+public Action CloudMusic_Stop(int client)
 {
 	ShowVGUIPanel(client, "info", hStop, false);
 }
